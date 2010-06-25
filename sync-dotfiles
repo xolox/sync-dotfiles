@@ -1,0 +1,89 @@
+#!/usr/bin/python
+
+# Author: Peter Odding <peter@peterodding.com>.
+# Homepage: http://peterodding.com/code/sync-dotfiles/
+
+import re
+import os
+import sys
+import tarfile
+from cStringIO import StringIO
+from subprocess import Popen, PIPE
+
+# Magic constants.
+CONFIG_FILE = '~/.sync-dotfiles.conf'
+FILES_HEADER = 'files:'
+HOSTS_HEADER = 'hosts:'
+LOCAL_HOST = 'local'
+
+# Make sure the configuration file exists.
+configfile = os.path.expanduser(CONFIG_FILE)
+if not os.path.exists(configfile):
+  sys.stderr.write("Missing %s configuration file!\n" % CONFIG_FILE)
+  sys.exit(1)
+
+# Portable color codes from http://en.wikipedia.org/wiki/ANSI_escape_code#Colors.
+colors = dict(black=0, red=1, green=2, yellow=3, blue=4, magenta=5, cyan=6, white=7)
+def colorcode(name): return '[0;3%dm' % colors[name]
+
+# Parse the configuration file.
+files = []
+hosts = {}
+in_files = False
+in_hosts = False
+for lnum, line in enumerate(open(configfile)):
+  line = line.strip()
+  if line == FILES_HEADER:
+    in_files = True
+    in_hosts = False
+  elif line == HOSTS_HEADER:
+    in_files = False
+    in_hosts = True
+  elif in_files and line != '':
+    files.append(line)
+  elif in_hosts and line != '':
+    host, color = line.split(':')
+    color = color.strip().lower()
+    if color not in colors:
+      sys.stderr.write("Invalid color name %r on line %i of %r!\n" % (color, lnum + 1, configfile))
+      sys.exit(1)
+    hosts[host.strip()] = color
+
+# Validate the configuration.
+if LOCAL_HOST not in hosts:
+  sys.stderr.write("You haven't defined the color of your local prompt so I don't know what to\n")
+  sys.stderr.write("replace! Hint: Add a %r line to the %r section of %r.\n" % (LOCAL_HOST, HOSTS_HEADER, configfile))
+  sys.exit(1)
+
+# Enable use of relative pathnames.
+os.chdir(os.environ['HOME'])
+
+# For each host, generate a tarball containing all dotfiles and rewrite the
+# dotfiles to conform to the above chosen shell prompt colors.
+for host, color in hosts.iteritems():
+  if host != LOCAL_HOST:
+    buf = StringIO()
+    tarball = tarfile.open(fileobj=buf, mode='w:gz')
+    sys.stderr.write("Building tarball for %s:\n" % host)
+    for dotfile in files:
+      handle = open(dotfile)
+      contents = handle.read()
+      handle.close()
+      pattern = re.escape(colorcode(hosts[LOCAL_HOST]))
+      changed_contents = re.sub(pattern, colorcode(color), contents)
+      if contents == changed_contents:
+        sys.stderr.write(" - %s\n" % dotfile)
+      else:
+        sys.stderr.write(" - %s (customized colors)\n" % dotfile)
+      fileinfo = tarball.gettarinfo(name=dotfile)
+      tarball.addfile(fileinfo, StringIO(changed_contents))
+    tarball.close()
+    buf.seek(0)
+    sys.stderr.write("Uploading tarball to %s ..\n" % host)
+    ssh = Popen(['ssh', host, 'tar xzf -'], stdin=PIPE)
+    ssh.communicate(input=buf.read())
+    buf.close()
+
+sys.stderr.write("All done!\n")
+
+# vim: ts=2 sw=2 et
