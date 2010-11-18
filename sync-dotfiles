@@ -16,11 +16,17 @@ FILES_HEADER = 'files:'
 HOSTS_HEADER = 'hosts:'
 LOCAL_HOST = 'local'
 
+def message(fmt, *args):
+  sys.stderr.write((fmt + '\n') % args)
+
+def fatal(fmt, *args):
+  message(fmt, *args)
+  sys.exit(1)
+
 # Make sure the configuration file exists.
 configfile = os.path.expanduser(CONFIG_FILE)
 if not os.path.exists(configfile):
-  sys.stderr.write("Missing %s configuration file!\n" % CONFIG_FILE)
-  sys.exit(1)
+  fatal("Missing %s configuration file!", CONFIG_FILE)
 
 # Portable color codes from http://en.wikipedia.org/wiki/ANSI_escape_code#Colors.
 colors = dict(black=0, red=1, green=2, yellow=3, blue=4, magenta=5, cyan=6, white=7)
@@ -45,15 +51,14 @@ for lnum, line in enumerate(open(configfile)):
     host, color = line.split(':')
     color = color.strip().lower()
     if color not in colors:
-      sys.stderr.write("Invalid color name %r on line %i of %r!\n" % (color, lnum + 1, configfile))
-      sys.exit(1)
+      fatal("Invalid color name %r on line %i of %r!", color, lnum + 1, configfile)
     hosts[host.strip()] = color
 
 # Validate the configuration.
 if LOCAL_HOST not in hosts:
-  sys.stderr.write("You haven't defined the color of your local prompt so I don't know what to\n")
-  sys.stderr.write("replace! Hint: Add a %r line to the %r section of %r.\n" % (LOCAL_HOST, HOSTS_HEADER, configfile))
-  sys.exit(1)
+  fatal("""You haven't defined the color of your local prompt so I don't know what to
+replace! Hint: Add a %r line to the %r section of %r.""",
+      LOCAL_HOST, HOSTS_HEADER, configfile)
 
 # Enable use of relative pathnames.
 os.chdir(os.environ['HOME'])
@@ -64,26 +69,26 @@ for host, color in hosts.iteritems():
   if host != LOCAL_HOST:
     buf = StringIO()
     tarball = tarfile.open(fileobj=buf, mode='w:gz')
-    sys.stderr.write("Building tarball for %s:\n" % host)
+    message("Building tarball for %s:", host)
     for dotfile in files:
       handle = open(dotfile)
       contents = handle.read()
       handle.close()
       pattern = re.escape(colorcode(hosts[LOCAL_HOST]))
       changed_contents = re.sub(pattern, colorcode(color), contents)
-      if contents == changed_contents:
-        sys.stderr.write(" - %s\n" % dotfile)
+      if contents != changed_contents:
+        message(" - %s (customized colors)", dotfile)
       else:
-        sys.stderr.write(" - %s (customized colors)\n" % dotfile)
+        message(" - %s", dotfile)
       fileinfo = tarball.gettarinfo(name=dotfile)
       tarball.addfile(fileinfo, StringIO(changed_contents))
     tarball.close()
     buf.seek(0)
-    sys.stderr.write("Uploading tarball to %s ..\n" % host)
+    message("Uploading tarball to %s ..", host)
     ssh = Popen(['ssh', host, 'tar xzf -'], stdin=PIPE)
     ssh.communicate(input=buf.read())
     buf.close()
 
-sys.stderr.write("All done!\n")
+message("All done!")
 
 # vim: ts=2 sw=2 et
