@@ -63,25 +63,30 @@ replace! Hint: Add a %r line to the %r section of %r.""",
 # Enable use of relative pathnames.
 os.chdir(os.environ['HOME'])
 
+# Read the dotfiles into memory only once.
+contents = {}
+for dotfile in files:
+  handle = open(dotfile)
+  contents[dotfile] = handle.read()
+  handle.close()
+
 # For each host, generate a tarball containing all dotfiles and rewrite the
 # dotfiles to conform to the above chosen shell prompt colors.
 for host, color in hosts.iteritems():
   if host != LOCAL_HOST:
+    message("Building tarball for %s:", host)
     buf = StringIO()
     tarball = tarfile.open(fileobj=buf, mode='w:gz')
-    message("Building tarball for %s:", host)
-    for dotfile in files:
-      handle = open(dotfile)
-      contents = handle.read()
-      handle.close()
-      pattern = re.escape(colorcode(hosts[LOCAL_HOST]))
-      changed_contents = re.sub(pattern, colorcode(color), contents)
-      if contents != changed_contents:
+    pattern = re.escape(colorcode(hosts[LOCAL_HOST]))
+    substitute = colorcode(color)
+    for dotfile, content in contents.iteritems():
+      changed_content = re.sub(pattern, substitute, content)
+      if content != changed_content:
         message(" - %s (customized colors)", dotfile)
       else:
         message(" - %s", dotfile)
       fileinfo = tarball.gettarinfo(name=dotfile)
-      tarball.addfile(fileinfo, StringIO(changed_contents))
+      tarball.addfile(fileinfo, StringIO(changed_content))
     tarball.close()
     buf.seek(0)
     message("Uploading tarball to %s ..", host)
