@@ -19,7 +19,7 @@ And here's the equivalent session on one of my servers which uses a red prompt:
 
 ## Usage
 
-To use this script you'll need to create a `~/.sync-dotfiles.conf` file. Start with a line `files:` and add the filenames of your dotfiles on the lines below that. Then add the line `hosts:` and below that line list your hosts (SSH aliases), each followed by a colon and then one of the supported color names. Make sure to also add the host `local` with the color you've used in the dotfiles on your local machine (so the script knows which ANSI escape sequences to rewrite). As an example here are my [~/.sync-dotfiles.conf](http://github.com/xolox/sync-dotfiles/blob/master/.sync-dotfiles.conf) and [~/.sqliterc](http://github.com/xolox/sync-dotfiles/blob/master/.sqliterc) files:
+To use this script you'll need to create a `~/.sync-dotfiles.conf` file. Start with a line `files:` and add the names of your dotfiles on the lines below that. Directories are also allowed and will be included recursively. Then add the line `hosts:` and below that line list your hosts (SSH aliases), each followed by a colon and then one of the supported color names. Make sure to also add the host `local` with the color you've used in the dotfiles on your local machine (so the script knows which ANSI escape sequences to rewrite). As an example here are my [~/.sync-dotfiles.conf](http://github.com/xolox/sync-dotfiles/blob/master/.sync-dotfiles.conf) and [~/.sqliterc](http://github.com/xolox/sync-dotfiles/blob/master/.sqliterc) files:
 
     $ cat ~/.sync-dotfiles.conf
     files:
@@ -33,6 +33,7 @@ To use this script you'll need to create a `~/.sync-dotfiles.conf` file. Start w
       .shell_aliases
       .shell_prompt
       .sqliterc
+      .vim
       .vimrc
       .zshrc
 

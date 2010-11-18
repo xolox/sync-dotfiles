@@ -65,10 +65,16 @@ os.chdir(os.environ['HOME'])
 
 # Read the dotfiles into memory only once.
 contents = {}
+def include(path):
+  if os.path.isdir(path):
+    for entry in sorted(os.listdir(path)):
+      include(os.path.join(path, entry))
+  else:
+    handle = open(path)
+    contents[path] = handle.read()
+    handle.close()
 for dotfile in files:
-  handle = open(dotfile)
-  contents[dotfile] = handle.read()
-  handle.close()
+  include(dotfile)
 
 # For each host, generate a tarball containing all dotfiles and rewrite the
 # dotfiles to conform to the above chosen shell prompt colors.
