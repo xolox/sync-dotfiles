@@ -37,6 +37,13 @@ To use this script you'll need to create a `~/.sync-dotfiles.conf` file. Start w
       .vimrc
       .zshrc
 
+    exclude:
+      .vim/.netrwhist
+      .vim/.VimballRecord
+      .vim/GetLatest
+      .vim/sessions
+      .vim/tags
+
     hosts:
       local: blue
       server1: red

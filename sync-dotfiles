@@ -12,9 +12,11 @@ from subprocess import Popen, PIPE
 
 # Magic constants.
 CONFIG_FILE = '~/.sync-dotfiles.conf'
-FILES_HEADER = 'files:'
-HOSTS_HEADER = 'hosts:'
+FILES_SECTION = 'files:'
+EXCLUDE_SECTION = 'exclude:'
+HOSTS_SECTION = 'hosts:'
 LOCAL_HOST = 'local'
+VERBOSE = '-v' in sys.argv
 
 def message(fmt, *args):
   sys.stderr.write((fmt + '\n') % args)
@@ -34,31 +36,31 @@ def colorcode(name): return '[0;3%dm' % colors[name]
 
 # Parse the configuration file.
 files = []
+exclude = []
 hosts = {}
-in_files = False
-in_hosts = False
-for lnum, line in enumerate(open(configfile)):
+state = 'default'
+for idx, line in enumerate(open(configfile)):
   line = line.strip()
-  if line == FILES_HEADER:
-    in_files = True
-    in_hosts = False
-  elif line == HOSTS_HEADER:
-    in_files = False
-    in_hosts = True
-  elif in_files and line != '':
+  if line in ('', FILES_SECTION, EXCLUDE_SECTION, HOSTS_SECTION):
+    state = line or 'default'
+  elif state == FILES_SECTION:
     files.append(line)
-  elif in_hosts and line != '':
+  elif state == EXCLUDE_SECTION:
+    exclude.append(line)
+  elif state == HOSTS_SECTION:
     host, color = line.split(':')
     color = color.strip().lower()
     if color not in colors:
-      fatal("Invalid color name %r on line %i of %r!", color, lnum + 1, configfile)
+      fatal("Invalid color name %r on line %i of %r!", color, idx + 1, configfile)
     hosts[host.strip()] = color
+  else:
+    fatal("Line %i in %r isn't inside a section!", idx + 1, configfile)
 
 # Validate the configuration.
 if LOCAL_HOST not in hosts:
   fatal("""You haven't defined the color of your local prompt so I don't know what to
 replace! Hint: Add a %r line to the %r section of %r.""",
-      LOCAL_HOST, HOSTS_HEADER, configfile)
+      LOCAL_HOST, HOSTS_SECTION, configfile)
 
 # Enable use of relative pathnames.
 os.chdir(os.environ['HOME'])
@@ -66,15 +68,19 @@ os.chdir(os.environ['HOME'])
 # Read the dotfiles into memory only once.
 contents = {}
 def include(path):
-  if os.path.isdir(path):
-    for entry in sorted(os.listdir(path)):
-      include(os.path.join(path, entry))
-  else:
-    handle = open(path)
-    contents[path] = handle.read()
-    handle.close()
+  if path not in exclude:
+    if os.path.isdir(path):
+      for entry in sorted(os.listdir(path)):
+        include(os.path.join(path, entry))
+    else:
+      handle = open(path)
+      contents[path] = handle.read()
+      handle.close()
+  elif VERBOSE:
+    message("Ignoring %s", path)
 for dotfile in files:
   include(dotfile)
+sorted_contents = sorted(contents.iteritems())
 
 # For each host, generate a tarball containing all dotfiles and rewrite the
 # dotfiles to conform to the above chosen shell prompt colors.
@@ -85,7 +91,7 @@ for host, color in hosts.iteritems():
     tarball = tarfile.open(fileobj=buf, mode='w:gz')
     pattern = re.escape(colorcode(hosts[LOCAL_HOST]))
     substitute = colorcode(color)
-    for dotfile, content in contents.iteritems():
+    for dotfile, content in sorted_contents:
       changed_content = re.sub(pattern, substitute, content)
       if content != changed_content:
         message(" - %s (customized colors)", dotfile)
