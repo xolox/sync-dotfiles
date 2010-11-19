@@ -106,7 +106,7 @@ def reversestat(path, info):
   os.utime(path, (info.st_atime, info.st_mtime))
   os.chmod(path, info.st_mode)
 
-has_rsync = False and os.system('rsync --version > /dev/null') == 0
+has_rsync = os.system('rsync --version > /dev/null') == 0
 for host, color in hosts.iteritems():
   substitute = colorcode(color)
   if host != LOCAL_HOST:
