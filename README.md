@@ -53,7 +53,7 @@ To use this script you'll need to create a `~/.sync-dotfiles.conf` file. Start w
     $ cat ~/.sqliterc
     .prompt "[0;34m> [0m" "[0;34m>> [0m"
 
-Given the above configuration, this is the output of the `sync-dotfiles` script:
+As you can see above I synchronize my `~/.vim` directory using the `sync-dotfiles` script. This directory contains some unwanted (large) files which I've excluded using an `exclude:` section. Given the above configuration, this is the output of the `sync-dotfiles` script:
 
     $ sync-dotfiles
     Building tarball for server1:
@@ -67,6 +67,7 @@ Given the above configuration, this is the output of the `sync-dotfiles` script:
      - .shell_aliases
      - .shell_prompt (customized colors)
      - .sqliterc (customized colors)
+     - .vim/ (long list of files omitted)
      - .vimrc
      - .zshrc
     Uploading tarball to server1 ..
@@ -81,6 +82,7 @@ Given the above configuration, this is the output of the `sync-dotfiles` script:
      - .shell_aliases
      - .shell_prompt (customized colors)
      - .sqliterc (customized colors)
+     - .vim/ (long list of files omitted)
      - .vimrc
      - .zshrc
     Uploading tarball to server2 ..
@@ -95,12 +97,13 @@ Given the above configuration, this is the output of the `sync-dotfiles` script:
      - .shell_aliases
      - .shell_prompt (customized colors)
      - .sqliterc (customized colors)
+     - .vim/ (long list of files omitted)
      - .vimrc
      - .zshrc
     Uploading tarball to server3 ..
     All done!
 
-With a dozen dotfiles and three servers the script finishes within 2 seconds.
+With a dozen dotfiles and three servers the script finishes within a few seconds.
 
 ## Contact
 
