@@ -7,6 +7,8 @@ import re
 import os
 import sys
 import tarfile
+from shutil import rmtree
+from tempfile import mkdtemp
 from cStringIO import StringIO
 from subprocess import Popen, PIPE
 
@@ -16,10 +18,16 @@ FILES_SECTION = 'files:'
 EXCLUDE_SECTION = 'exclude:'
 HOSTS_SECTION = 'hosts:'
 LOCAL_HOST = 'local'
-VERBOSE = '-v' in sys.argv
+VERBOSE = len(sys.argv) >= 2 \
+    and sys.argv[1].startswith('-v') \
+    and len(sys.argv[1]) - 1 or 0
 
 def message(fmt, *args):
   sys.stderr.write((fmt + '\n') % args)
+
+def verbose(lvl, fmt, *args):
+  if VERBOSE >= lvl:
+    message(fmt, *args)
 
 def fatal(fmt, *args):
   message(fmt, *args)
@@ -35,7 +43,7 @@ colors = dict(black=0, red=1, green=2, yellow=3, blue=4, magenta=5, cyan=6, whit
 def colorcode(name): return '[0;3%dm' % colors[name]
 
 # Parse the configuration file.
-files = []
+filenames = []
 exclude = []
 hosts = {}
 state = 'default'
@@ -44,7 +52,7 @@ for idx, line in enumerate(open(configfile)):
   if line in ('', FILES_SECTION, EXCLUDE_SECTION, HOSTS_SECTION):
     state = line or 'default'
   elif state == FILES_SECTION:
-    files.append(line)
+    filenames.append(line)
   elif state == EXCLUDE_SECTION:
     exclude.append(line)
   elif state == HOSTS_SECTION:
@@ -65,46 +73,89 @@ replace! Hint: Add a %r line to the %r section of %r.""",
 # Enable use of relative pathnames.
 os.chdir(os.environ['HOME'])
 
+# Create a regex to search for ANSI escape codes.
+pattern = re.escape(colorcode(hosts[LOCAL_HOST]))
+
 # Read the dotfiles into memory only once.
-contents = {}
+dotfiles = {}
 def include(path):
-  if path not in exclude:
+  if path in exclude:
+    verbose(1, "Ignoring %s", path)
+  else:
     if os.path.isdir(path):
       for entry in sorted(os.listdir(path)):
         include(os.path.join(path, entry))
     else:
       handle = open(path)
-      contents[path] = handle.read()
+      content = handle.read()
+      dotfiles[path] = {
+          'content': content,
+          'info': os.stat(path),
+          'rewrite': re.search(pattern, content)
+      }
       handle.close()
-  elif VERBOSE:
-    message("Ignoring %s", path)
-for dotfile in files:
+for dotfile in filenames:
   include(dotfile)
-sorted_contents = sorted(contents.iteritems())
+sorted_dotfiles = sorted(dotfiles.iteritems())
 
 # For each host, generate a tarball containing all dotfiles and rewrite the
 # dotfiles to conform to the above chosen shell prompt colors.
+
+def reversestat(path, info):
+  os.chown(path, info.st_uid, info.st_gid)
+  os.utime(path, (info.st_atime, info.st_mtime))
+  os.chmod(path, info.st_mode)
+
+has_rsync = False and os.system('rsync --version > /dev/null') == 0
 for host, color in hosts.iteritems():
+  substitute = colorcode(color)
   if host != LOCAL_HOST:
-    message("Building tarball for %s:", host)
-    buf = StringIO()
-    tarball = tarfile.open(fileobj=buf, mode='w:gz')
-    pattern = re.escape(colorcode(hosts[LOCAL_HOST]))
-    substitute = colorcode(color)
-    for dotfile, content in sorted_contents:
-      changed_content = re.sub(pattern, substitute, content)
-      if content != changed_content:
-        message(" - %s (customized colors)", dotfile)
-      else:
-        message(" - %s", dotfile)
-      fileinfo = tarball.gettarinfo(name=dotfile)
-      tarball.addfile(fileinfo, StringIO(changed_content))
-    tarball.close()
-    buf.seek(0)
-    message("Uploading tarball to %s ..", host)
-    ssh = Popen(['ssh', host, 'tar xzf -'], stdin=PIPE)
-    ssh.communicate(input=buf.read())
-    buf.close()
+    if has_rsync:
+      message("Preparing files for %s ..", host)
+      tempdir = mkdtemp()
+      for dotfile, attrs in sorted_dotfiles:
+        tempfile = os.path.join(tempdir, dotfile)
+        subdir = os.path.split(tempfile)[0]
+        if not os.path.isdir(subdir):
+          verbose(3, " - %s", subdir)
+          os.makedirs(subdir)
+        if not attrs['rewrite']:
+          verbose(2, " - %s", dotfile)
+          os.link(dotfile, tempfile)
+        else:
+          verbose(1, " - %s (customized colors)", tempfile)
+          handle = open(tempfile, 'w')
+          handle.write(re.sub(pattern, substitute, attrs['content']))
+          handle.close()
+          reversestat(tempfile, attrs['info'])
+      message("Uploading files to %s ..", host)
+      command = 'rsync -%sa "%s/" "%s:"' % (VERBOSE and 'v' or '', tempdir, host)
+      verbose(1, "Executing command %s", command)
+      status = os.system(command)
+      if status:
+        fatal("Command exited with status %i:\n\n%s", status, command)
+      verbose(1, "Deleting temporary files under %s ..", tempdir)
+      rmtree(tempdir)
+    else:
+      message("Building tarball for %s:", host)
+      buf = StringIO()
+      tarball = tarfile.open(fileobj=buf, mode='w:bz2')
+      for dotfile, attrs in sorted_dotfiles:
+        content = attrs['content']
+        if attrs['rewrite']:
+          content = re.sub(pattern, substitute, content)
+          verbose(1, " - %s (customized colors)", dotfile)
+        else:
+          verbose(2, " - %s", dotfile)
+        fileinfo = tarball.gettarinfo(name=dotfile)
+        tarball.addfile(fileinfo, StringIO(content))
+      tarball.close()
+      nbytes = buf.tell()
+      buf.seek(0)
+      message("Uploading %i KB tarball to %s ..", nbytes / 1024, host)
+      ssh = Popen(['ssh', host, 'tar x' + (VERBOSE and 'v' or '') + 'jf -'], stdin=PIPE)
+      ssh.communicate(input=buf.read())
+      buf.close()
 
 message("All done!")
 
