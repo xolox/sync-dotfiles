@@ -39,7 +39,7 @@ class sync_dotfiles: # {{{1
   def run(self, args): # {{{2
     # Parse command line arguments.
     try:
-      opts, args = getopt.getopt(args, 'vf:trh',
+      opts, hostnames = getopt.getopt(args, 'vf:trh',
           ['verbose', 'config', 'tar', 'rsync', 'help'])
       for name, value in opts:
         if name in ('-v', '--verbose'):
@@ -58,14 +58,23 @@ class sync_dotfiles: # {{{1
       self.fatal(str(err))
     # Read configuration file.
     self.readconfig(self.configfile)
+    # Validate/select hosts to synchronize.
+    if hostnames != []:
+      for host in hostnames:
+        if host not in self.hosts:
+          validnames = ', '.join('%r' % h for h in sorted(self.hosts.keys()))
+          self.fatal("Unknown host %r! (known hosts: %s)", host, validnames)
+    else:
+      hostnames = self.hosts.keys()
     # Create regex to search for ANSI escape codes.
     local_color = self.colorcode(self.hosts[LOCAL_HOST])
     self.pattern = re.compile(re.escape(local_color))
     # Read dotfiles into memory.
     dotfiles = self.readfiles()
-    for host, color in self.hosts.iteritems():
+    # Synchronize dotfiles with selected hosts.
+    for host in hostnames:
       if host != LOCAL_HOST:
-        self.uploadfiles(host, color, dotfiles, self.transport)
+        self.uploadfiles(host, self.hosts[host], dotfiles, self.transport)
 
   def usage(self): # {{{2
     print "Usage: %s [OPTS] [HOSTS]" % self.name
