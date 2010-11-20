@@ -156,12 +156,17 @@ class sync_dotfiles: # {{{1
       if os.path.isdir(path):
         for entry in sorted(os.listdir(path)):
           self.readfiles_r(files, os.path.join(path, entry))
-      else:
+      elif not self.vimswapfile(path):
         handle = open(path)
         data = handle.read()
         handle.close()
         files[path] = dotfile(path = path, info = os.stat(path),
             data = data, matches = re.search(self.pattern, data))
+
+  def vimswapfile(self, path):
+    head, tail = os.path.split(path)
+    return tail[0] == '.' and tail[-4:-1] == '.sw' \
+        or len(tail) == 3 and tail[0:2] == '.sw'
 
 class auto_transport: # {{{1
 
