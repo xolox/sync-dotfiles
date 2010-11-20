@@ -39,7 +39,8 @@ class sync_dotfiles: # {{{1
   def run(self, args): # {{{2
     # Parse command line arguments.
     try:
-      opts, args = getopt.getopt(args, 'vf:tr', ['verbose', 'config', 'tar', 'rsync'])
+      opts, args = getopt.getopt(args, 'vf:trh',
+          ['verbose', 'config', 'tar', 'rsync', 'help'])
       for name, value in opts:
         if name in ('-v', '--verbose'):
           self.verbosity += 1
@@ -49,6 +50,8 @@ class sync_dotfiles: # {{{1
           self.transport = tar_transport()
         elif name in ('-r', '--rsync'):
           self.transport = rsync_transport()
+        elif name in ('-h', '--help'):
+          self.usage()
         else:
           self.fatal("Invalid option %r!", name)
     except getopt.GetoptError, err:
@@ -63,6 +66,20 @@ class sync_dotfiles: # {{{1
     for host, color in self.hosts.iteritems():
       if host != LOCAL_HOST:
         self.uploadfiles(host, color, dotfiles, self.transport)
+
+  def usage(self): # {{{2
+    print "Usage: %s [OPTS] [HOSTS]" % self.name
+    print
+    print "If you don't specify any HOSTS your dotfiles will be synchronized"
+    print "with all known hosts (defined in the file %s). " % self.configfile
+    print
+    print "Valid options are:"
+    print "  -h, --help     show this message and exit"
+    print "  -v, --verbose  increase verbosity (useful up to -vvv)"
+    print "  -f, --config   specify path to configuration file"
+    print "  -t, --tar      select tar transport mechanism (slow but always works)"
+    print "  -r, --rsync    select rsync transport method (fast but not always supported)"
+    sys.exit(0)
 
   def uploadfiles(self, host, color, dotfiles, transport): # {{{2
     substitute = self.colorcode(color)
