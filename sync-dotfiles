@@ -25,17 +25,19 @@ COLORS = dict(black=0, red=1, green=2, yellow=3, blue=4, magenta=5, cyan=6, whit
 
 class sync_dotfiles: # {{{1
 
-  def __init__(self, name, args): # {{{2
+  def __init__(self, name): # {{{2
     # Initialize attributes.
     self.hosts = {}
     self.filenames = []
     self.excluded = []
     self.dotfiles = {}
-    # Parse command line arguments.
+    self.configfile = CONFIG_FILE
+    self.transport = auto_transport()
     self.name = self.fmtpath(name)
     self.verbosity = 0
-    configfile = CONFIG_FILE
-    transport = auto_transport()
+
+  def run(self, args): # {{{2
+    # Parse command line arguments.
     try:
       opts, args = getopt.getopt(args, 'vf:tr', ['verbose', 'config', 'tar', 'rsync'])
       for name, value in opts:
@@ -44,15 +46,15 @@ class sync_dotfiles: # {{{1
         elif name in ('-f', '--config'):
           self.configfile = value
         elif name in ('-t', '--tar'):
-          transport = tar_transport()
+          self.transport = tar_transport()
         elif name in ('-r', '--rsync'):
-          transport = rsync_transport()
+          self.transport = rsync_transport()
         else:
           self.fatal("Invalid option %r!", name)
     except getopt.GetoptError, err:
       self.fatal(str(err))
     # Read configuration file.
-    self.readconfig(configfile)
+    self.readconfig(self.configfile)
     # Create regex to search for ANSI escape codes.
     local_color = self.colorcode(self.hosts[LOCAL_HOST])
     self.pattern = re.compile(re.escape(local_color))
@@ -60,7 +62,7 @@ class sync_dotfiles: # {{{1
     dotfiles = self.readfiles()
     for host, color in self.hosts.iteritems():
       if host != LOCAL_HOST:
-        self.uploadfiles(host, color, dotfiles, transport)
+        self.uploadfiles(host, color, dotfiles, self.transport)
 
   def uploadfiles(self, host, color, dotfiles, transport): # {{{2
     substitute = self.colorcode(color)
@@ -238,6 +240,7 @@ class dotfile: # {{{1
 
 args = sys.argv
 name = args.pop(0)
-sync_dotfiles(name, args)
+script = sync_dotfiles(name)
+script.run(args)
 
 # vim: ts=2 sw=2 et
