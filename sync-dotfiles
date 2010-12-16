@@ -95,9 +95,11 @@ class sync_dotfiles: # {{{1
     # Use selected transport command to upload files.
     self.message(2, "Preparing files for %s ..", host)
     transport.init(host, self)
-    for path, dotfile in dotfiles:
-      self.message(3, " - Including %s", path)
-      transport.include(dotfile, re.sub(self.pattern, substitute, dotfile.data))
+    for dotfile in dotfiles:
+      self.message(3, " - Including %s", dotfile.path)
+      if not dotfile.isdir():
+        dotfile.realdata = re.sub(self.pattern, substitute, dotfile.data)
+      transport.include(dotfile)
     transport.send(host, self.verbosity >= 2, self)
 
   def message(self, lvl, fmt, *args): # {{{2
@@ -153,24 +155,25 @@ class sync_dotfiles: # {{{1
   def readfiles(self): # {{{2
     # Enable use of relative pathnames.
     os.chdir(os.environ['HOME'])
-    files = {}
+    files = []
     for dotfile in self.filenames:
       self.readfiles_r(files, dotfile)
-    return sorted(files.iteritems())
+    return files
 
   def readfiles_r(self, files, path):
     if path in self.excluded:
       self.message(1, "Ignoring %s", path)
     else:
       if os.path.isdir(path):
-        for entry in sorted(os.listdir(path)):
+        files.append(container(path = path, info = os.stat(path)))
+        for entry in os.listdir(path):
           self.readfiles_r(files, os.path.join(path, entry))
       elif not self.vimswapfile(path):
         handle = open(path)
         data = handle.read()
         handle.close()
-        files[path] = dotfile(path = path, info = os.stat(path),
-            data = data, matches = re.search(self.pattern, data))
+        files.append(container(path = path, info = os.stat(path),
+            data = data, matches = re.search(self.pattern, data)))
 
   def vimswapfile(self, path):
     head, tail = os.path.split(path)
@@ -186,8 +189,8 @@ class auto_transport: # {{{1
       self.transport = tar_transport()
     self.transport.init(host, script)
 
-  def include(self, dotfile, data): # {{{2
-    self.transport.include(dotfile, data)
+  def include(self, dotfile): # {{{2
+    self.transport.include(dotfile)
 
   def send(self, host, verbose, script): # {{{2
     self.transport.send(host, verbose, script)
@@ -198,9 +201,10 @@ class tar_transport: # {{{1
     self.buf = cStringIO.StringIO()
     self.tarfile = tarfile.open(fileobj = self.buf, mode = 'w:bz2')
 
-  def include(self, dotfile, data): # {{{2
-    info = self.tarfile.gettarinfo(name = dotfile.path)
-    self.tarfile.addfile(info, cStringIO.StringIO(data))
+  def include(self, dotfile): # {{{2
+    if not dotfile.isdir():
+      info = self.tarfile.gettarinfo(name = dotfile.path)
+      self.tarfile.addfile(info, cStringIO.StringIO(dotfile.realdata))
 
   def send(self, host, verbose, script): # {{{2
     script.message(0, "Uploading files to %s using tar ..", host)
@@ -231,28 +235,36 @@ class rsync_transport: # {{{1
     if not rsync_transport.available(host):
       script.fatal("rsync support explicitly requested but unavailable!")
     self.directory = tempfile.mkdtemp()
+    self.metadata = []
 
-  def include(self, dotfile, data): # {{{2
-    tempfile = os.path.join(self.directory, dotfile.path)
-    tempdir = os.path.split(tempfile)[0]
-    if not os.path.isdir(tempdir):
-      os.makedirs(tempdir)
-    if not dotfile.matches:
+  def include(self, dotfile): # {{{2
+    path = os.path.join(self.directory, dotfile.path)
+    if dotfile.isdir():
+      # Clone directory structure.
+      os.makedirs(path)
+      # Schedule to copy metadata.
+      self.metadata.append((path, dotfile))
+    elif not dotfile.matches:
       # Use hard links for unchanged files.
-      os.link(dotfile.path, tempfile)
+      os.link(dotfile.path, path)
     else:
       # Copy changed files.
-      handle = open(tempfile, 'w')
-      handle.write(data)
+      handle = open(path, 'w')
+      handle.write(dotfile.realdata)
       handle.close()
       # Including metadata.
-      info = dotfile.info
-      os.chown(tempfile, info.st_uid, info.st_gid)
-      os.utime(tempfile, (info.st_atime, info.st_mtime))
-      os.chmod(tempfile, info.st_mode)
+      self.copyinfo(path, dotfile.info)
+
+  def copyinfo(self, target, info): # {{{3
+    os.chown(target, info.st_uid, info.st_gid)
+    os.utime(target, (info.st_atime, info.st_mtime))
+    os.chmod(target, info.st_mode)
 
   def send(self, host, verbose, script): # {{{2
     script.message(0, "Uploading files to %s using rsync ..", host)
+    # Apply directory metadata.
+    for path, directory in reversed(self.metadata):
+      self.copyinfo(path, directory.info)
     command = 'rsync -%sa "%s/" "%s:"' % (verbose and 'v' or '', self.directory, host)
     script.cmdmsg(command)
     status = os.system(command)
@@ -261,11 +273,14 @@ class rsync_transport: # {{{1
     script.message(3, "Cleaning up temporary files in %s ..", self.directory)
     shutil.rmtree(self.directory)
 
-class dotfile: # {{{1
+class container: # {{{1
 
   def __init__(self, **kw): # {{{2
     for k, v in kw.iteritems():
       setattr(self, k, v)
+
+  def isdir(self):
+    return not hasattr(self, 'data')
 
 # }}}1
 
