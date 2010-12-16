@@ -6,7 +6,6 @@
 import cStringIO
 import getopt
 import os
-import re
 import shutil
 import subprocess
 import sys
@@ -66,9 +65,8 @@ class sync_dotfiles: # {{{1
           self.fatal("Unknown host %r! (known hosts: %s)", host, validnames)
     else:
       hostnames = self.hosts.keys()
-    # Create regex to search for ANSI escape codes.
-    local_color = self.colorcode(self.hosts[LOCAL_HOST])
-    self.pattern = re.compile(re.escape(local_color))
+    # Generate the ANSI escape code for the local machine.
+    self.pattern = self.colorcode(self.hosts[LOCAL_HOST])
     # Read dotfiles into memory.
     dotfiles = self.readfiles()
     # Synchronize dotfiles with selected hosts.
@@ -92,13 +90,12 @@ class sync_dotfiles: # {{{1
 
   def uploadfiles(self, host, color, dotfiles, transport): # {{{2
     substitute = self.colorcode(color)
-    # Use selected transport command to upload files.
     self.message(2, "Preparing files for %s ..", host)
     transport.init(host, self)
     for dotfile in dotfiles:
       self.message(3, " - Including %s", dotfile.path)
       if not dotfile.isdir():
-        dotfile.realdata = re.sub(self.pattern, substitute, dotfile.data)
+        dotfile.realdata = dotfile.data.replace(self.pattern, substitute)
       transport.include(dotfile)
     transport.send(host, self.verbosity >= 2, self)
 
@@ -173,7 +170,7 @@ class sync_dotfiles: # {{{1
         data = handle.read()
         handle.close()
         files.append(container(path = path, info = os.stat(path),
-            data = data, matches = re.search(self.pattern, data)))
+            data = data, matches = data.find(self.pattern) >= 0))
 
   def vimswapfile(self, path):
     head, tail = os.path.split(path)
